@@ -113,6 +113,151 @@ def GetNewDatesFromListFilesInputManifest(aInputList, aInputDir, aOutputDir):
 
     return NewList
 
+
+'''
+This function get new date comparing orthorectification folder and Temporal filtering
+folder.
+'''
+def GetNewDatesComparingOrthoFolderAndTempFiltFolder(aOrthoFolder, aTempFiltFolder):
+    AllInputFiles = GetFileByExtensionFromDirectory(aOrthoFolder, 'tif')
+    
+    # Filter to dont take into account the output
+    AllInputFiles = [ afile for afile in AllInputFiles if 'TempProcStack' not in afile]
+
+    # Get all acquisition date
+    ListInputDates = [getDayFromS1FileOrFolder(RastPath) for RastPath in AllInputFiles ]
+    
+    # Get all unique dates
+    UniqueInputDates = list(set(ListInputDates))
+    UniqueInputDates.sort()
+    
+    # Get Dates from Output
+    AllOutputFiles = GetFileByExtensionFromDirectory(aTempFiltFolder, 'tif')
+    ListOutputDates = [getDayFromS1FileOrFolder(RastPath) for RastPath in AllOutputFiles ]
+    UniqueOutputDates = list(set(ListOutputDates))
+    UniqueOutputDates.sort()
+    
+    # Get New dates
+    NewDates = [x for x in UniqueInputDates if x not in UniqueOutputDates]
+    
+    return NewDates
+
+def GetInputOutputListFilesForTempFiltering(aInput_Data_Folder,aOutput_Data_Folder,
+                                        aNewDates,aOutput_in_dB, aTmpDirTempFilt,
+                                        aWindow_Temp_Filtering):
+    # Get input files to process
+    AllTifFiles = GetFileByExtensionFromDirectory(aInput_Data_Folder, 'tif')
+    # Dont take into account already filtered dates
+    AllTifFile = []
+    for NDate in aNewDates:
+        for file in AllTifFiles:
+            if NDate in file:
+                AllTifFile.append(file)
+    
+    AllCopolFile = [file for file in AllTifFile if ('VV' in file) or  ('HH' in file)]
+    AllCrosspolFile = [file for file in AllTifFile if ('HV' in file) or  ('VH' in file)]
+    
+    if 'nt' in os.name:
+        AllCopolFile = [file.replace("\\","/") for file in AllTifFile if ('VV' in file) or  ('HH' in file)]
+        AllCrosspolFile = [file.replace("\\","/") for file in AllTifFile if ('HV' in file) or  ('VH' in file)]
+    else:
+        AllCopolFile = [file for file in AllTifFile if ('VV' in file) or  ('HH' in file)]
+        AllCrosspolFile = [file for file in AllTifFile if ('HV' in file) or  ('VH' in file)]
+    
+    # Create Output list data
+    AllOutCopolFile = []
+    AllOutCrosspolFile = []
+    
+    if not aOutput_in_dB:
+        aTmpDirTempFilt = aOutput_Data_Folder
+    
+    for CopolFile in AllCopolFile:
+        # DirName of currentfile
+        DirFile =  os.path.dirname(CopolFile)
+        DirName = os.path.split(DirFile)[1]
+    
+        # Create Output subfolder
+        OutFolder = os.path.join(aTmpDirTempFilt,DirName)
+        if not os.path.exists(OutFolder):
+            os.makedirs(OutFolder)
+    
+        FileName = os.path.basename(os.path.splitext(CopolFile)[0])
+        TempFilterFileName = os.path.join(OutFolder,FileName + '_TempFilt_W' + str(aWindow_Temp_Filtering) + '.tif')
+        AllOutCopolFile.append(TempFilterFileName.replace("\\","/"))
+    
+    # Test if previous temporal filtering
+    '''
+    TO CONTROL
+    '''
+    AllTifFiles = GetFileByExtensionFromDirectory(aOutput_Data_Folder, 'tif')
+    TempProcStackFile = [ Queg for Queg in AllTifFiles if 'TempProcStack' in Queg]
+    if len(TempProcStackFile) ==2:
+        for QFile in TempProcStackFile:
+            if ('VV' or 'HH') in QFile:
+                CopolQueguaFile = QFile
+            else:
+                CrosspolQueguaFile = QFile
+    else:
+        CopolQueguaFile = ''
+        CrosspolQueguaFile = ''
+    
+    
+    for CrosspolFile in AllCrosspolFile:
+        # DirName of currentfile
+        DirFile =  os.path.dirname(CrosspolFile)
+        DirName = os.path.split(DirFile)[1]
+    
+        # Create Output subfolder
+        OutFolder = os.path.join(aTmpDirTempFilt,DirName)
+        if not os.path.exists(OutFolder):
+            os.makedirs(OutFolder)
+    
+        FileName = os.path.basename(os.path.splitext(CrosspolFile)[0])
+        TempFilterFileName = os.path.join(OutFolder,FileName + '_TempFilt_W' + str(Window_Temp_Filtering) + '.tif')
+        AllOutCrosspolFile.append(TempFilterFileName.replace("\\","/"))
+    
+
+'''
+This function apply lee filtering data to all files in a folder
+'''
+def ApplyLeePreFiltering(aFolderList, aOutputFolder, aWindowSize, aENL, aRam):
+    Radius = int(aWindowSize / 2.)
+    # Loop thru different S1 data (folder)
+    for Folder in aFolderList:
+        # List all tif and tiff files
+        AllTifFile = GetFileByExtensionFromDirectory(Folder, 'tif')
+
+        InDirName = os.path.split(Folder)[1]
+
+        # Create Output subfolder
+        OutFolder = os.path.join(aOutputFolder,InDirName)
+        if not os.path.exists(OutFolder):
+            os.makedirs(OutFolder)
+
+        for file in AllTifFile:
+            FileName = os.path.basename(os.path.splitext(file)[0])
+            OutputFile = os.path.join(OutFolder,  FileName + '_SpkLee_W' + str(aWindowSize) + '_NL' + str(aENL) +'.tif')
+
+            OTBLeeFiltering(file,OutputFile, Radius, aENL, aRam)
+
+
+'''
+This function use OTB to apply Lee Filtering
+'''
+def OTBLeeFiltering(aInputFile,aOutputFile, aLeeRadius, aENL, aRam):
+    cmd = "otbcli_Despeckle"
+    cmd += " -in " + aInputFile
+    cmd += " -filter lee"
+    cmd += " -filter.lee.rad " + str(aLeeRadius)
+    cmd += " -filter.lee.nblooks " + str(aENL)
+    cmd += " -ram " + str(aRam)
+    cmd += " -out " + aOutputFile
+
+    # progress.setInfo(cmd)
+    # print cmd
+
+    p1 = subprocess.Popen (cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,  stderr=subprocess.PIPE)
+    ret= p1.communicate()[1]
 '''
 This function control that the input vector contain one different path per polygon
 if not  stop and return an alert
