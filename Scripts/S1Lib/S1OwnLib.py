@@ -9,11 +9,12 @@ Created on Tue Sep 26 18:13:52 2017
 '''
 Sentinel-1 own Library
 '''
-import os, subprocess, shutil
-
-from osgeo import  ogr, osr
-
+import os, sys, subprocess, shutil
 from datetime import datetime
+
+from osgeo import  ogr, osr, gdal
+import numpy as np
+from scipy.ndimage.filters import uniform_filter
 '''
 Function that take a generic string of available input value and that
 return the real OTB argument value (Calibration_Type) and its acronyme Calib_Name
@@ -182,24 +183,22 @@ def GetInputOutputListFilesForTempFiltering(aInput_Data_Folder,aOutput_Data_Fold
             os.makedirs(OutFolder)
     
         FileName = os.path.basename(os.path.splitext(CopolFile)[0])
-        TempFilterFileName = os.path.join(OutFolder,FileName + '_TempFilt_W' + str(aWindow_Temp_Filtering) + '.tif')
+        TempFilterFileName = os.path.join(OutFolder,FileName + '_TempFilt_W'\
+        + str(aWindow_Temp_Filtering) + '.tif')
         AllOutCopolFile.append(TempFilterFileName.replace("\\","/"))
     
-    # Test if previous temporal filtering
-    '''
-    TO CONTROL
-    '''
     AllTifFiles = GetFileByExtensionFromDirectory(aOutput_Data_Folder, 'tif')
-    TempProcStackFile = [ Queg for Queg in AllTifFiles if 'TempProcStack' in Queg]
-    if len(TempProcStackFile) ==2:
-        for QFile in TempProcStackFile:
+    QueganFile = [ Queg for Queg in AllTifFiles if 'TempProcStack' in Queg]
+
+    if len(QueganFile) ==2:
+        for QFile in QueganFile:
             if ('VV' or 'HH') in QFile:
-                CopolQueguaFile = QFile
+                CopolQueguanFile = QFile
             else:
-                CrosspolQueguaFile = QFile
+                CrosspolQueguanFile = QFile
     else:
-        CopolQueguaFile = ''
-        CrosspolQueguaFile = ''
+        CopolQueguanFile = ''
+        CrosspolQueguanFile = ''
     
     
     for CrosspolFile in AllCrosspolFile:
@@ -213,9 +212,429 @@ def GetInputOutputListFilesForTempFiltering(aInput_Data_Folder,aOutput_Data_Fold
             os.makedirs(OutFolder)
     
         FileName = os.path.basename(os.path.splitext(CrosspolFile)[0])
-        TempFilterFileName = os.path.join(OutFolder,FileName + '_TempFilt_W' + str(Window_Temp_Filtering) + '.tif')
+        TempFilterFileName = os.path.join(OutFolder,FileName + '_TempFilt_W' \
+        + str(aWindow_Temp_Filtering) + '.tif')
         AllOutCrosspolFile.append(TempFilterFileName.replace("\\","/"))
+        
+    return AllCopolFile,AllOutCopolFile, AllCrosspolFile, AllOutCrosspolFile,\
+        CopolQueguanFile, CrosspolQueguanFile 
     
+'''
+This function apply teporal filtering over a 3d numpy array
+'''
+def QueganTemporalSpeckleFiltering(aTempArray, aSumPart, aPrevNumDates, aWinSize):
+    eps = 1e-16
+    # Jk = E[Ik]/N * Sum (I/E[I])
+    NumTime, Rows, Cols = aTempArray.shape
+
+    FiltTempArray = np.zeros(shape=(NumTime, Rows, Cols),dtype=np.float)
+    # SumPart = np.zeros(shape=(Rows, Cols),dtype=np.float)
+
+    for i in range(NumTime):
+        aSumPart += aTempArray[i,:,:] / (uniform_filter(aTempArray[i,:,:], size=aWinSize) + eps )
+
+    for i in range(NumTime):
+        FiltTempArray[i,:,:] += uniform_filter(aTempArray[i,:,:], size=aWinSize) * aSumPart / (float(NumTime) + float(aPrevNumDates))
+
+    return FiltTempArray, aSumPart
+
+'''
+Apply block processing temporal filtering
+'''
+def TileTemporalFiltering(aInput_Data_Folder, aInputRasterListPath, aOutputRasterListPath,
+                          aInputPrevFiltPath, aBlockSize,aTempWindowSize):
+    '''
+    TODO: Add sliding window parameter
+
+
+    This method show how to process huge raster
+    using easy tilling based on block size
+    and if necessary taking into account window size
+    when necessary in processing like filtering for example
+    aInputRasterPath string --> Contain input raster path to process
+    aOutputRasterPath string --> Contain output raster path to process
+    aBlockSize integer --> Contain the size of square block to Tile
+    aWindowSize integer --> Contain windows size for sliding window (0 size by default)
+    '''
+    aWindowSize = aTempWindowSize
+
+    # we put X and Y block size based on aBlockSize
+    xBSize = aBlockSize
+    yBSize = aBlockSize
+
+
+    NumBands = len(aInputRasterListPath)
+
+    # We get InputRaster dates
+    aOuputPrevFiltPath = ''
+    NumPrevDates = 0
+    aListDates = [getDayFromS1FileOrFolder(aRastPath) for aRastPath in aInputRasterListPath ]
+    UniqueDates = list(set(aListDates))
+    UniqueDates.sort()
+
+
+
+    # We open one raster to get rows and cols
+    src_ds = gdal.Open( aInputRasterListPath[0] )
+    if src_ds is None:
+        print 'Could not open ' + fn
+        sys.exit(1)
+
+    # We get number of row and cols
+    rows = src_ds.RasterYSize
+    cols = src_ds.RasterXSize
+
+    # We force Float32 to read data
+    BandType = gdal.GDT_Float32
+
+    # We get Projection from input raster
+    InputGeoTransform = src_ds.GetGeoTransform()
+    InputProjection = src_ds.GetProjection()
+
+    src_ds = None
+
+    # Open input files
+    GdalFilePointerList = []
+    GdalOutputFilePointerList = []
+    InputBandPointerlist = []
+    OutputBandPointerlist = []
+
+    for i in range(NumBands):
+        GdalFilePointerList.append(gdal.Open( aInputRasterListPath[i] ))
+        InputBandPointerlist.append( GdalFilePointerList[i].GetRasterBand(1) )
+    
+    if aInputPrevFiltPath != '':
+        src_Sumpart = gdal.Open( aInputPrevFiltPath )
+        SumpartBand = src_Sumpart.GetRasterBand(1)
+        if src_Sumpart is None:
+            print 'Could not open ' + fn
+            sys.exit(1)
+        # Get first and last dates and number of date from this format QueganVV_20150221_20161118_15.tif
+        BaseName = os.path.basename(os.path.splitext(aInputPrevFiltPath)[0])
+        NumPrevDates = float(BaseName.split('_')[3])
+
+        # print 'BaseName, FiltBeginDate, FiltEnDdate, NumPrevDates', BaseName, FiltBeginDate, FiltEnDdate, NumPrevDates
+        # print UniqueDates[-1], 
+
+        InputPrevFiltNameSplit = BaseName.split('_')
+        InputPrevFiltNameSplit[2] = UniqueDates[-1]
+        InputPrevFiltNameSplit[3] = str(int(NumPrevDates + NumBands))
+
+        aOuputPrevFiltPath = os.path.join(os.path.dirname(aInputPrevFiltPath) , '_'.join(InputPrevFiltNameSplit) + '.tif')
+    else:
+        # print 'Prev path does not  exist'
+        if '_VV_' in aInputRasterListPath[0]:
+            aOuputPrevFiltPath = os.path.join(aInput_Data_Folder, 'TempProcStackVV_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif')
+        elif '_HH_' in aInputRasterListPath[0]:
+            aOuputPrevFiltPath = os.path.join(aInput_Data_Folder, 'TempProcStackHH_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif')
+        elif '_VH_' in aInputRasterListPath[0]:
+            aOuputPrevFiltPath = os.path.join(aInput_Data_Folder, 'TempProcStackVH_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif')
+        elif '_HV_' in aInputRasterListPath[0]:
+            aOuputPrevFiltPath = os.path.join(aInput_Data_Folder, 'TempProcStackHV_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif')
+
+    # Output file
+    # print 'aOuputPrevFiltPath', aOuputPrevFiltPath
+    format = "GTiff"
+    driver = gdal.GetDriverByName( format )
+    for i in range(NumBands):
+        GdalOutputFilePointerList.append(driver.Create(aOutputRasterListPath[i], cols, rows, 1, BandType ))
+        GdalOutputFilePointerList[i].SetGeoTransform(InputGeoTransform)
+        GdalOutputFilePointerList[i].SetProjection(InputProjection)
+
+        OutputBandPointerlist.append(GdalOutputFilePointerList[i].GetRasterBand(1))
+        OutputBandPointerlist[i].SetNoDataValue(0)
+
+    # Add SUmpart Output
+    GdalOutputFilePointerList.append(driver.Create(aOuputPrevFiltPath, cols, rows, 1, BandType ))
+    GdalOutputFilePointerList[NumBands].SetGeoTransform(InputGeoTransform)
+    GdalOutputFilePointerList[NumBands].SetProjection(InputProjection)
+    
+    OutputBandPointerlist.append(GdalOutputFilePointerList[NumBands].GetRasterBand(1))
+    OutputBandPointerlist[NumBands].SetNoDataValue(0)
+
+    # print 'Rows, Cols: ',rows, cols
+    BlockId = 0
+    for i in range(0, rows, yBSize):
+        if i + yBSize < rows:
+            numRows = yBSize
+        else:
+            numRows = rows - i
+        # Backup i and numRows
+        numRowsDefault = numRows
+        iOriginal = i
+        for j in range(0, cols, xBSize):
+            i = iOriginal
+            numRows = numRowsDefault
+            # print '\n Block numero : ', BlockId
+            if j + xBSize < cols:
+                numCols = xBSize
+            else:
+                numCols = cols - j
+            numColsDefault = numCols
+
+            # print 'Indice i,j original : ', i, j
+            # print 'numRows numCols :',numRows, numCols
+            # Test for applying sliding window buffer
+            # Backup j
+            jOriginal = j
+
+            iOffset = 0
+            jOffset = 0
+            numColsOffset = 0
+            numRowsOffset = 0
+            if i - aWindowSize >= 0:
+                i = i - aWindowSize
+                iOffset = aWindowSize
+            if j - aWindowSize >= 0:
+                j = j - aWindowSize
+                jOffset = aWindowSize
+
+            if jOriginal + numCols + aWindowSize <= cols:
+                numCols = numCols + aWindowSize
+                numColsOffset = aWindowSize
+            numCols = numCols + jOffset
+
+            if iOriginal + numRows + aWindowSize <= rows:
+                numRows = numRows + aWindowSize
+                numRowsOffset = aWindowSize
+            numRows = numRows + iOffset
+
+            # print 'Read as array j, i, numCols, numRows', j, i, numCols, numRows
+            Data = np.zeros(shape=(NumBands, numRows, numCols ),dtype=np.float)
+            SumPart = np.zeros(shape=(numRows, numCols ),dtype=np.float)
+
+            #We get file values
+            for it in range(len(InputBandPointerlist)):
+                Data[it, :,:] = InputBandPointerlist[it].ReadAsArray(j, i, numCols, numRows)
+
+            # Test if Previous filtering
+            if aInputPrevFiltPath != '':
+                # print 'existing filt file'
+                
+                SumPart = SumpartBand.ReadAsArray(j, i, numCols, numRows)
+
+            '''
+            Do something like
+            '''
+            # Temporal filtering
+            Data, SumPart = QueganTemporalSpeckleFiltering(Data,SumPart, NumPrevDates, aTempWindowSize)
+
+            #Clip the border
+            Data = Data[:,iOffset:iOffset + numRowsDefault,jOffset:jOffset + numColsDefault]
+            SumPart = SumPart[iOffset:iOffset + numRowsDefault,jOffset:jOffset + numColsDefault]
+
+
+            #We writte Quegan filtered data
+            for band in range( NumBands):
+                OutputBandPointerlist[band].WriteArray(Data[band,:,:],jOriginal,iOriginal)
+            
+            OutputBandPointerlist[NumBands].WriteArray(SumPart,jOriginal,iOriginal)
+
+            BlockId = BlockId + 1
+
+    # We close all file
+    src_ds = None
+    for band in range( NumBands + 1):
+        GdalOutputFilePointerList[band] = None
+        OutputBandPointerlist[band] = None
+    for band in range( NumBands):
+        GdalFilePointerList[band] = None
+        InputBandPointerlist[band] = None
+
+'''
+This function generate dual pol color composition in dB
+'''
+def GenerateDualPolColorcompositiondB(aSubfolders, aOutputFolder, aRam):
+    # Loop thru different S1 data (folder)
+    for Folder in aSubfolders:
+        # List all tif and tiff files
+        AllTifFile = GetFileByExtensionFromDirectory(Folder, 'tif')
+
+        InDirName = os.path.split(Folder)[1]
+
+        # Create Output subfolder
+        OutFolder = os.path.join(aOutputFolder,InDirName)
+        if not os.path.exists(OutFolder):
+            os.makedirs(OutFolder)
+
+        Dual = False
+        if '1SDV' in Folder:
+            CopolFile = [s for s in AllTifFile if "VV" in s][0]
+            CrosspolFile = [s for s in AllTifFile if "VH" in s][0]
+            Dual = True
+
+        elif '1SDH' in Folder:
+            CopolFile = [s for s in AllTifFile if "HH" in s][0]
+            CrosspolFile = [s for s in AllTifFile if "HV" in s][0]
+            Dual = True
+        else:
+            print 'Not dual pol data'
+
+        if Dual:
+            CopolFileName = os.path.basename(os.path.splitext(CopolFile)[0])
+            CrosspolFileName = os.path.basename(os.path.splitext(CrosspolFile)[0])
+
+            CopoldBFile = os.path.join(OutFolder,  CopolFileName + '_dB' +'.tif')
+            CrosspoldBFile = os.path.join(OutFolder,  CrosspolFileName + '_dB' +'.tif')
+
+            if '1SDV' in Folder:
+                BaseNameFile = CopolFileName.replace('VV','')
+                BaseNameFile = os.path.basename(os.path.splitext(BaseNameFile)[0])
+
+                DiffFile = os.path.join(OutFolder,  BaseNameFile + '_VHdB-VVdB' +'.tif')
+
+                OutputColorCompVRTFile = os.path.join(OutFolder,  BaseNameFile + 'VVdB_VHdB_HVdB-VVdB' +'.vrt')
+            else:
+                BaseNameFile = CopolFileName.replace('HH','')
+                BaseNameFile = os.path.basename(os.path.splitext(BaseNameFile)[0])
+
+                DiffFile = os.path.join(OutFolder,  BaseNameFile + 'HVdB-HHdB' +'.tif')
+
+                OutputColorCompVRTFile = os.path.join(OutFolder,  BaseNameFile + 'HHdB_HVdB_HVdB-HHdB' +'.vrt')
+            
+            Int2dB(CopolFile, 'im1b1', CopoldBFile, aRam)
+            Int2dB(CrosspolFile, 'im1b1', CrosspoldBFile, aRam)
+            DiffdB(CopoldBFile, CrosspoldBFile, DiffFile, aRam)
+
+
+
+            # VRT color composition
+            GdalBuildVRT([CopoldBFile, CrosspoldBFile, DiffFile], OutputColorCompVRTFile,  -30, -30)
+
+'''
+This function create difference between copol and crosspol
+'''
+def DiffdB(aInputFileCopol, aInputFileCrosspol, aOutputFile, aRam):
+    cmd = "otbcli_BandMath -il "
+    cmd += aInputFileCopol + " "
+    cmd += aInputFileCrosspol + " "
+    cmd += " -ram " + str(aRam)
+    cmd += " -out "
+    cmd += aOutputFile
+    cmd += " -exp "
+    cmd += "\" im2b1 - im1b1 \""
+
+    # progress.setInfo(cmd)
+    # print cmd
+    
+    p1 = subprocess.Popen (cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,  stderr=subprocess.PIPE)
+    ret= p1.communicate()[1]
+
+'''
+This function generate a vrt from input raster list
+'''
+def GdalBuildVRT(aInputListFile, aOutputFile,  aSRCNoData, aVRTNoData):
+    TmpListfile = aOutputFile.replace('.vrt', 'TMPListFile.txt')
+    fic=open(TmpListfile,'w')
+    for file in aInputListFile:
+        fic.write(file +'\n')
+    fic.close() 
+
+    cmd = "gdalbuildvrt "
+    cmd += " -separate -overwrite "
+    cmd += " -srcnodata " + str(aSRCNoData)
+    cmd += " -vrtnodata " + str(aVRTNoData)
+    cmd += " " + aOutputFile
+    cmd += " -input_file_list " + TmpListfile
+    cmd += " " + aOutputFile
+
+    # progress.setInfo(cmd)
+    # print cmd
+    
+    p1 = subprocess.Popen (cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,  stderr=subprocess.PIPE)
+    ret= p1.communicate()[1]
+
+    if os.path.exists(TmpListfile):
+        os.remove(TmpListfile)
+
+'''
+This function convert S1 intensity to dB
+'''
+def Int2dB(aInputFile, aBand, aOutputFile, aRam):
+    cmd = "otbcli_BandMath -il "
+    cmd += aInputFile + " "
+    cmd += " -ram " + str(aRam)
+    cmd += " -out "
+    cmd += aOutputFile
+    cmd += " -exp "
+    cmd += "\"" + aBand + "<=0.001 ? -30. : 10. * log10(" +aBand +")\""
+
+    # progress.setInfo(cmd)
+    # print cmd
+    
+    p1 = subprocess.Popen (cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,  stderr=subprocess.PIPE)
+    ret= p1.communicate()[1]
+
+
+def GenerateDualPolColorcompositionInt(aSubfolders, aOutputFolder, aRam):
+    # Loop thru different S1 data (folder)
+    for Folder in aSubfolders:
+        # List all tif and tiff files
+        AllTifFile = GetFileByExtensionFromDirectory(Folder, 'tif')
+
+        InDirName = os.path.split(Folder)[1]
+
+        # Create Output subfolder
+        OutFolder = os.path.join(aOutputFolder,InDirName)
+        if not os.path.exists(OutFolder):
+            os.makedirs(OutFolder)
+
+        Dual = False
+        if '1SDV' in Folder:
+            CopolFile = [s for s in AllTifFile if "VV" in s][0]
+            CrosspolFile = [s for s in AllTifFile if "VH" in s][0]
+            Dual = True
+
+        elif '1SDH' in Folder:
+            CopolFile = [s for s in AllTifFile if "HH" in s][0]
+            CrosspolFile = [s for s in AllTifFile if "HV" in s][0]
+            Dual = True
+        else:
+            print 'Not dual pol data'
+
+        if Dual:
+            CopolFileName = os.path.basename(os.path.splitext(CopolFile)[0])
+            CrosspolFileName = os.path.basename(os.path.splitext(CrosspolFile)[0])
+
+            if '1SDV' in Folder:
+                BaseNameFile = CopolFileName.replace('VV','')
+                BaseNameFile = os.path.basename(os.path.splitext(BaseNameFile)[0])
+
+                Ratio = os.path.join(OutFolder,  BaseNameFile + '_VH-VV' +'.tif')
+
+                OutputColorCompVRTFile = os.path.join(OutFolder,  BaseNameFile + 'VV_VH_VH-VV' +'.vrt')
+            else:
+                BaseNameFile = CopolFileName.replace('HH','')
+                BaseNameFile = os.path.basename(os.path.splitext(BaseNameFile)[0])
+
+                Ratio = os.path.join(OutFolder,  BaseNameFile + 'HV-HH' +'.tif')
+
+                OutputColorCompVRTFile = os.path.join(OutFolder,  BaseNameFile + 'HH_HV_HV-HH' +'.vrt')
+
+            RatioDualPol(CopolFile, CrosspolFileName, Ratio, aRam)
+
+
+
+            # VRT color composition
+            GdalBuildVRT([CopolFileName, CrosspolFileName, Ratio], OutputColorCompVRTFile,  0, 0)
+'''
+This function generate the ratio between intensities
+'''
+def RatioDualPol(aInputFileCopol, aInputFileCrosspol, aOutputFile, aRam):
+    cmd = "otbcli_BandMath -il "
+    cmd += aInputFileCopol + " "
+    cmd += aInputFileCrosspol + " "
+    cmd += " -ram " + str(aRam)
+    cmd += " -out "
+    cmd += aOutputFile
+    cmd += " -exp "
+    cmd += "\" im2b1 / im1b1 \""
+
+    # progress.setInfo(cmd)
+    # print cmd
+    
+    p1 = subprocess.Popen (cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,  stderr=subprocess.PIPE)
+    ret= p1.communicate()[1]
 
 '''
 This function apply lee filtering data to all files in a folder

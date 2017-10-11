@@ -13,8 +13,9 @@ This script do temporal filtering over sentinel-1 data
 '''
 IMPORT
 '''
-import os
+import os, shutil
 from datetime import datetime
+import numpy as np
 
 '''
 from S1Lib.S1OwnLib import (ReturnRealCalibrationOTBValue,
@@ -30,6 +31,10 @@ from S1Lib.S1OwnLib import (ReturnRealCalibrationOTBValue,
 from S1Lib.S1OwnLib import (get_immediate_subdirectories,
                             GetNewDatesComparingOrthoFolderAndTempFiltFolder,
                             ApplyLeePreFiltering,
+                            GetInputOutputListFilesForTempFiltering,
+                            TileTemporalFiltering,
+                            GenerateDualPolColorcompositiondB,
+                            GenerateDualPolColorcompositionInt,
                             )
 # TO DELETE
 '''
@@ -58,7 +63,7 @@ Input OF THE PROGRAM
 This string have to contain the folder path that contain all the Orthorectified
 and calibrate S1 data from previous step
 '''
-Input_Data_Folder = '/media/cedric/CL/ONFGuyane/Data/Sentinel1/TestScript/Ortho/p120'
+Input_Data_Folder = '/media/cedric/CL/ONFGuyane/Data/Sentinel1/TestScript/Ortho/p120/Full'
 
 '''
 This integer contain the window size for the temporal filter
@@ -158,26 +163,39 @@ if Apply_Lee_Pre_Filtering:
 #3 - Apply temporel filtering
 # Get input output list file to filter
 # Copol in one side and cross pol
-AllInCopolList,AllOutCopolList, AllInCrosspolList, AllOutCrosspolList = GetInputOutputListFilesForTempFiltering(Input_Data_Folder,
-                                                                                                                Output_Data_Folder,
-                                                                                                                NewDates,
-                                                                                                                Output_in_dB,
-                                                                                                                Output_in_dB,
-                                                                                                                TmpDirTempFilt,
-                                                                                                                Window_Temp_Filtering
-                                                                                                                )
+AllInCopolList,AllOutCopolList, AllInCrosspolList, AllOutCrosspolList, \
+CopolQueguanFile, CrosspolQueguanFile\
+= GetInputOutputListFilesForTempFiltering(Input_Data_Folder,Output_Data_Folder,
+                                        NewDates,Output_in_dB, TmpDirTempFilt,
+                                        Spatial_Window_Size_for_Temporal_Filter)
+                                        
+# Apply the temporal filtering
+NumDate = len(AllInCopolList)
+# Estimate the size of the block to use based on user available ram parameter
+BlockSize = int(np.sqrt(float(Ram) * np.power(1024,2) /(4. * 2. *(2. * float(NumDate + 1.)))))
 
+TileTemporalFiltering(Input_Data_Folder, AllInCopolList, AllOutCopolList,
+                      CopolQueguanFile, BlockSize,
+                      Spatial_Window_Size_for_Temporal_Filter)
 
-
-
-
-
-
-
-
-
-
-
-
+# Apply filtering to crosspol
+TileTemporalFiltering(Input_Data_Folder, AllInCrosspolList, AllOutCrosspolList,
+                      CrosspolQueguanFile, BlockSize,
+                      Spatial_Window_Size_for_Temporal_Filter)
 
 #4 - Generate color composition
+SubFolders = get_immediate_subdirectories(TmpDirTempFilt)
+if Output_in_dB:
+	GenerateDualPolColorcompositiondB(SubFolders, Output_Data_Folder, Ram)
+else:
+	GenerateDualPolColorcompositionInt(SubFolders, Output_Data_Folder, Ram)
+
+# Delete old Quegan File
+if os.path.exists(CopolQueguanFile):
+	os.remove(CopolQueguanFile)
+
+if os.path.exists(CrosspolQueguanFile):
+	os.remove(CrosspolQueguanFile)
+
+# Delete Tmp dir
+shutil.rmtree(TmpDir)
