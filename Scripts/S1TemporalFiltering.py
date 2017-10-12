@@ -15,6 +15,7 @@ IMPORT
 '''
 import os, shutil
 from datetime import datetime
+import time
 import numpy as np
 
 '''
@@ -35,7 +36,12 @@ from S1Lib.S1OwnLib import (get_immediate_subdirectories,
                             TileTemporalFiltering,
                             GenerateDualPolColorcompositiondB,
                             GenerateDualPolColorcompositionInt,
+                            TileTemporalFiltering,
+                            TileTemporalFilteringRIOS,
                             )
+
+
+
 # TO DELETE
 '''
 NOTES
@@ -97,7 +103,7 @@ Output_in_dB = True
 Output folder that will contain one subfolder for each processed polygon and
 each relative orbit
 '''
-Output_Data_Folder = '/media/cedric/CL/ONFGuyane/Data/Sentinel1/TestScript/Filt'
+Output_Data_Folder = '/media/cedric/CL/ONFGuyane/Data/Sentinel1/TestScript/Filt_LibRIOS'
 
 
 '''
@@ -168,20 +174,43 @@ CopolQueguanFile, CrosspolQueguanFile\
 = GetInputOutputListFilesForTempFiltering(Input_Data_Folder,Output_Data_Folder,
                                         NewDates,Output_in_dB, TmpDirTempFilt,
                                         Spatial_Window_Size_for_Temporal_Filter)
-                                        
+                                  
+# Test if new date if not exit     
+if len(AllInCopolList) == 0:
+    ExceptionMessage = 'No new dates to process'
+    # Delete Tmp dir
+    shutil.rmtree(TmpDir)
+    
+    raise Exception(ExceptionMessage)
+                                  
 # Apply the temporal filtering
 NumDate = len(AllInCopolList)
 # Estimate the size of the block to use based on user available ram parameter
 BlockSize = int(np.sqrt(float(Ram) * np.power(1024,2) /(4. * 2. *(2. * float(NumDate + 1.)))))
 
+
+#start = time.time()
 TileTemporalFiltering(Input_Data_Folder, AllInCopolList, AllOutCopolList,
                       CopolQueguanFile, BlockSize,
-                      Spatial_Window_Size_for_Temporal_Filter)
+                      Spatial_Window_Size_for_Temporal_Filter, Output_Data_Folder)
+
+
+# Usion RIOS lib Ongoing DEV                    
+#TileTemporalFilteringRIOS(Input_Data_Folder, AllInCopolList, AllOutCopolList,
+#                      CopolQueguanFile, BlockSize,
+#                      Spatial_Window_Size_for_Temporal_Filter)
 
 # Apply filtering to crosspol
 TileTemporalFiltering(Input_Data_Folder, AllInCrosspolList, AllOutCrosspolList,
                       CrosspolQueguanFile, BlockSize,
-                      Spatial_Window_Size_for_Temporal_Filter)
+                      Spatial_Window_Size_for_Temporal_Filter, Output_Data_Folder)
+               
+# Usion RIOS lib Ongoing DEV  
+#TileTemporalFilteringRIOS(Input_Data_Folder, AllInCrosspolList, AllOutCrosspolList,
+#                      CrosspolQueguanFile, BlockSize,
+#                      Spatial_Window_Size_for_Temporal_Filter)
+#end = time.time()
+
 
 #4 - Generate color composition
 SubFolders = get_immediate_subdirectories(TmpDirTempFilt)
@@ -199,3 +228,5 @@ if os.path.exists(CrosspolQueguanFile):
 
 # Delete Tmp dir
 shutil.rmtree(TmpDir)
+
+#print 'Temps execution co et cross pol filtering', end - start
