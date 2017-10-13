@@ -15,7 +15,6 @@ IMPORT
 '''
 import os, shutil
 from datetime import datetime
-import time
 import numpy as np
 
 '''
@@ -33,10 +32,8 @@ from S1Lib.S1OwnLib import (get_immediate_subdirectories,
                             GetNewDatesComparingOrthoFolderAndTempFiltFolder,
                             ApplyLeePreFiltering,
                             GetInputOutputListFilesForTempFiltering,
-                            TileTemporalFiltering,
                             GenerateDualPolColorcompositiondB,
                             GenerateDualPolColorcompositionInt,
-                            TileTemporalFiltering,
                             TileTemporalFilteringRIOS,
                             )
 
@@ -190,25 +187,15 @@ BlockSize = int(np.sqrt(float(Ram) * np.power(1024,2) /(4. * 2. *(2. * float(Num
 
 
 #start = time.time()
-TileTemporalFiltering(Input_Data_Folder, AllInCopolList, AllOutCopolList,
+# Usion RIOS lib Ongoing DEV                    
+TileTemporalFilteringRIOS(Input_Data_Folder, AllInCopolList, AllOutCopolList,
                       CopolQueguanFile, BlockSize,
                       Spatial_Window_Size_for_Temporal_Filter, Output_Data_Folder)
 
-
-# Usion RIOS lib Ongoing DEV                    
-#TileTemporalFilteringRIOS(Input_Data_Folder, AllInCopolList, AllOutCopolList,
-#                      CopolQueguanFile, BlockSize,
-#                      Spatial_Window_Size_for_Temporal_Filter)
-
-# Apply filtering to crosspol
-TileTemporalFiltering(Input_Data_Folder, AllInCrosspolList, AllOutCrosspolList,
+# Usion RIOS lib Ongoing DEV  
+TileTemporalFilteringRIOS(Input_Data_Folder, AllInCrosspolList, AllOutCrosspolList,
                       CrosspolQueguanFile, BlockSize,
                       Spatial_Window_Size_for_Temporal_Filter, Output_Data_Folder)
-               
-# Usion RIOS lib Ongoing DEV  
-#TileTemporalFilteringRIOS(Input_Data_Folder, AllInCrosspolList, AllOutCrosspolList,
-#                      CrosspolQueguanFile, BlockSize,
-#                      Spatial_Window_Size_for_Temporal_Filter)
 #end = time.time()
 
 

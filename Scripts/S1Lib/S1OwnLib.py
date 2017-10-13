@@ -17,6 +17,7 @@ import numpy as np
 from scipy.ndimage.filters import uniform_filter
 
 from rios import applier
+from rios import cuiprogress
 
 '''
 Function that take a generic string of available input value and that
@@ -248,9 +249,6 @@ This function apply teporal filtering over a 3d numpy array
 def QueganTemporalSpeckleFilteringRIOS(info, inputs, outputs, otherargs):
     eps = 1e-16
     NumTime = len(inputs.imgs) - 1
-    print 'outputs',outputs
-    
-    print '\n NumTime',NumTime
     
     # Read first image as sumpart just to create a 2D array due to RIOS
     aSumPart = inputs.imgs[0].astype(np.float32)
@@ -258,21 +256,23 @@ def QueganTemporalSpeckleFilteringRIOS(info, inputs, outputs, otherargs):
     # We remove the first band dimension equal to one
     aSumPart = aSumPart[0,:,:]
     
-    print '\n aSumPart',aSumPart
-    print '\n aSumPart.shape',aSumPart.shape
     # Replace all value to 0.
     aSumPart.fill(0.)
     
     # Get row, cols
     Rows, Cols = aSumPart.shape
     
+    # List of numpy array for the output
+    OutList = []
+    
     # Test if previous filtering if yes we read the data
-    print '\notherargs.InPrevPath', otherargs.PrevFilt
     if otherargs.PrevFilt:
-        print 'In quegan filtering func : YES previous filtering'
+#        print 'In quegan filtering func : YES previous filtering'
         aSumPart = inputs.imgs[NumTime].astype(np.float32)
-    else:
-        print 'In quegan filtering func : NO previous filtering'
+        # We remove the first band dimension equal to one
+        aSumPart = aSumPart[0,:,:]
+#    else:
+#        print 'In quegan filtering func : NO previous filtering'
 
     FiltTempArray = np.zeros(shape=(NumTime, Rows, Cols),dtype=np.float)
     
@@ -286,17 +286,18 @@ def QueganTemporalSpeckleFilteringRIOS(info, inputs, outputs, otherargs):
         img = img[0,:,:]
         FiltTempArray[i,:,:] += uniform_filter(img, size=otherargs.WinSize) \
         * aSumPart / (float(NumTime) + float(otherargs.NPrevDates))
-        
-    for i in range(NumTime):
-        outputs.imgs[i] = FiltTempArray[i,:,:]
-        
-    outputs.imgs[NumTime] = aSumPart
+    
+        OutList.append(np.expand_dims(FiltTempArray[i,:,:], axis=0))
+    OutList.append(np.expand_dims(aSumPart, axis=0))
+
+    outputs.imgs = OutList
+
         
 '''
 Apply block processing temporal filtering
 '''
 def TileTemporalFilteringRIOS(aInput_Data_Folder, aInputRasterListPath, aOutputRasterListPath,
-                            aInputPrevFiltPath, aBlockSize,aTempWindowSize):
+                            aInputPrevFiltPath, aBlockSize,aTempWindowSize, aOutput_Folder):
     NumBands = len(aInputRasterListPath)
     # Boolean of previous filtering
     BoolPrevFilt = False
@@ -314,9 +315,6 @@ def TileTemporalFilteringRIOS(aInput_Data_Folder, aInputRasterListPath, aOutputR
         BaseName = os.path.basename(os.path.splitext(aInputPrevFiltPath)[0])
         NumPrevDates = float(BaseName.split('_')[3])
 
-        # print 'BaseName, FiltBeginDate, FiltEnDdate, NumPrevDates', BaseName, FiltBeginDate, FiltEnDdate, NumPrevDates
-        # print UniqueDates[-1], 
-
         InputPrevFiltNameSplit = BaseName.split('_')
         InputPrevFiltNameSplit[2] = UniqueDates[-1]
         InputPrevFiltNameSplit[3] = str(int(NumPrevDates + NumBands))
@@ -325,21 +323,20 @@ def TileTemporalFilteringRIOS(aInput_Data_Folder, aInputRasterListPath, aOutputR
                                           '_'.join(InputPrevFiltNameSplit) + '.tif')
         BoolPrevFilt = True
     else:
-        # print 'Prev path does not  exist'
         # Put existing file in order that rios find it in input
         aInputPrevFiltPath = aInputRasterListPath[0]
     
         if '_VV_' in aInputRasterListPath[0]:
-            aOuputPrevFiltPath = os.path.join(aInput_Data_Folder,
+            aOuputPrevFiltPath = os.path.join(aOutput_Folder,
             'TempProcStackVV_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif')
         elif '_HH_' in aInputRasterListPath[0]:
-            aOuputPrevFiltPath = os.path.join(aInput_Data_Folder,
+            aOuputPrevFiltPath = os.path.join(aOutput_Folder,
             'TempProcStackHH_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif')
         elif '_VH_' in aInputRasterListPath[0]:
-            aOuputPrevFiltPath = os.path.join(aInput_Data_Folder,
+            aOuputPrevFiltPath = os.path.join(aOutput_Folder,
             'TempProcStackVH_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif')
         elif '_HV_' in aInputRasterListPath[0]:
-            aOuputPrevFiltPath = os.path.join(aInput_Data_Folder,
+            aOuputPrevFiltPath = os.path.join(aOutput_Folder,
             'TempProcStackHV_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif')
             
         BoolPrevFilt = False
@@ -357,6 +354,17 @@ def TileTemporalFilteringRIOS(aInput_Data_Folder, aInputRasterListPath, aOutputR
     Radius = int(aTempWindowSize / 2.)
     controls.setOverlap(Radius)
     
+    # Enable multi thread
+    controls.setNumThreads(1)
+    controls.setJobManagerType('multiprocessing')
+    
+    # Give the block size
+    controls.setWindowXsize(aBlockSize)
+    controls.setWindowYsize(aBlockSize)
+    
+    # Enable progress
+#    controls.progress = cuiprogress.GDALProgressBar()
+    
     # Define other args to use
     otherargs = applier.OtherInputs()
     # Window size
@@ -373,12 +381,7 @@ def TileTemporalFilteringRIOS(aInput_Data_Folder, aInputRasterListPath, aOutputR
     infiles.imgs = aInputRasterListPath
     outfiles.imgs = aOutputRasterListPath
     
-#    print infiles.imgs, '\n' 
-#    print len(outfiles.imgs)
-#    print outfiles.imgs, '\n' 
-    
-    applier.apply(QueganTemporalSpeckleFilteringRIOS, infiles, outfiles,
-                  otherargs, controls=controls)
+    applier.apply(QueganTemporalSpeckleFilteringRIOS, infiles, outfiles,otherargs, controls=controls)
 
     
 '''
