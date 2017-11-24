@@ -13,40 +13,75 @@ This script do temporal filtering over sentinel-1 data
 '''
 IMPORT
 '''
-import os, shutil
+import os, shutil, sys
 from datetime import datetime
 import numpy as np
+from inspect import getsourcefile
+
 
 '''
-from S1Lib.S1OwnLib import (ReturnRealCalibrationOTBValue,
-                                   GetFileByExtensionFromDirectory,
-                                   GetNewDatesFromListFilesInputManifest,
-                                   ReprojVector,
-                                   CheckAllDifferentRelativeOrbit,
-                                   getS1ByTile,
-                                   CreateShapeFromPath,
-                                   ProcessS1Dataset)
+This function join path always using unix sep
 '''
-
-from S1Lib.S1OwnLib import (get_immediate_subdirectories,
-                            GetNewDatesComparingOrthoFolderAndTempFiltFolder,
-                            ApplyLeePreFiltering,
-                            GetInputOutputListFilesForTempFiltering,
-                            GenerateDualPolColorcompositiondB,
-                            GenerateDualPolColorcompositionInt,
-                            TileTemporalFilteringRIOS,
-                            )
+def modOsJoinPath(alistToJoin):
+    joinedPath = os.path.join(*alistToJoin).replace("\\","/")
+    
+    return joinedPath
 
 
+'''
+This function return the qgis script folder
+'''
+def getQGISProcessingScriptFolder():
+    from qgis.core import QgsApplication
+    QGISProcessingScriptFolder = os.path.dirname(QgsApplication.qgisSettingsDirPath())
+    QGISProcessingScriptFolder = modOsJoinPath([QGISProcessingScriptFolder,
+    'processing', 'scripts'])
+    
+    return QGISProcessingScriptFolder
 
-# TO DELETE
+'''
+This function load the necessary libs in different way
+if we are running script in qgis processing or not
+'''
+def AddS1LibToPath():
+    # Boolean to know if in qgis
+    import qgis.utils
+    inqgis = qgis.utils.iface is not None
+    
+    if inqgis:
+        QGISProcessingScriptFolder = getQGISProcessingScriptFolder()
+        
+        # Create the S1Lib lib folder path
+        ScriptPath = modOsJoinPath([QGISProcessingScriptFolder, 'S1Lib'])
+    else:
+        LocalScriptFileDir = os.path.dirname(os.path.abspath((getsourcefile(lambda:0)))).replace("\\","/")
+        # Create the S1Lib lib folder path
+        ScriptPath = modOsJoinPath([LocalScriptFileDir, 'S1Lib'])  
+        
+    # Add path to sys
+    sys.path.insert(0,ScriptPath)
+    
+    
+
+# Load OTB Libs
+AddS1LibToPath()
+
+from S1OwnLib import (get_immediate_subdirectories,
+                          GetNewDatesComparingOrthoFolderAndTempFiltFolder,
+                          ApplyLeePreFiltering,
+                          GetInputOutputListFilesForTempFiltering,
+                          GenerateDualPolColorcompositiondB,
+                          GenerateDualPolColorcompositionInt,
+                          TileTemporalFilteringRIOS,
+                          )
+
 '''
 NOTES
 Things to do
 
 '''
 
-##Sentinel-1 Deforestation Process=group
+##Sentinel-1 Deforestation Process V2=group
 ##2 - Temporal Filtering over area=name
 ##Input_Data_Folder=folder
 ##Spatial_Window_Size_for_Temporal_Filter=number 11
@@ -66,7 +101,7 @@ Input OF THE PROGRAM
 This string have to contain the folder path that contain all the Orthorectified
 and calibrate S1 data from previous step
 '''
-Input_Data_Folder = '/media/cedric/CL/ONFGuyane/Data/Sentinel1/TestScript/Ortho/p120/Full'
+Input_Data_Folder = '/media/cedric/CL/ONFGuyane/Data/Sentinel1/TestScript/Ortho/p120'
 
 '''
 This integer contain the window size for the temporal filter
@@ -107,7 +142,7 @@ Output_Data_Folder = '/media/cedric/CL/ONFGuyane/Data/Sentinel1/TestScript/Filt_
 Amount of allocate ram
 In case of use half of the available memory (not the physical memory)
 '''
-Ram = 2000
+Ram = 3000
 
 
 '''
@@ -133,13 +168,13 @@ NewDates = GetNewDatesComparingOrthoFolderAndTempFiltFolder(Input_Data_Folder,
 # Create tmp dir
 # Get time
 TimeNow = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-TmpDir = os.path.join(Output_Data_Folder, 'tmp' + TimeNow)
+TmpDir = modOsJoinPath([Output_Data_Folder, 'tmp' + TimeNow])
 if not os.path.exists(TmpDir):
     os.makedirs(TmpDir)
 
 
 # Create Temp Filtering Tmp Dir
-TmpDirTempFilt = os.path.join(TmpDir, "TempFilt")
+TmpDirTempFilt = modOsJoinPath([TmpDir, "TempFilt"])
 if not os.path.exists(TmpDirTempFilt):
     os.makedirs(TmpDirTempFilt)
 

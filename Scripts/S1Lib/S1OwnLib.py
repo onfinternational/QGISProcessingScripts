@@ -10,6 +10,7 @@ Created on Tue Sep 26 18:13:52 2017
 Sentinel-1 own Library
 '''
 import os, sys, subprocess, shutil
+from inspect import getsourcefile
 from datetime import datetime
 
 from osgeo import  ogr, osr, gdal
@@ -18,6 +19,44 @@ from scipy.ndimage.filters import uniform_filter
 
 from rios import applier
 from rios import cuiprogress
+
+'''
+This function join path always using unix sep
+'''
+def modOsJoinPath(alistToJoin):
+    joinedPath = os.path.join(*alistToJoin).replace("\\","/")
+    
+    return joinedPath
+
+'''
+This function return the qgis script folder
+'''
+def getQGISProcessingScriptFolder():
+    from qgis.core import QgsApplication
+    QGISProcessingScriptFolder = os.path.dirname(QgsApplication.qgisSettingsDirPath())
+    QGISProcessingScriptFolder = modOsJoinPath([QGISProcessingScriptFolder,
+    'processing', 'scripts'])
+    
+    return QGISProcessingScriptFolder
+
+'''
+This function load the necessary libs in different way
+if we are running script in qgis processing or not
+'''
+def LoadS1Lib():
+    # Boolean to know if in qgis
+    import qgis.utils
+    inqgis = qgis.utils.iface is not None
+    
+    if inqgis:
+        QGISProcessingScriptFolder = getQGISProcessingScriptFolder()
+        
+        # Create the S1Lib lib folder path
+        ScriptPath = modOsJoinPath([QGISProcessingScriptFolder, 'S1Lib'])
+    else:
+        LocalScriptFileDir = os.path.dirname(os.path.abspath((getsourcefile(lambda:0)))).replace("\\","/")
+        # Create the S1Lib lib folder path
+        ScriptPath = modOsJoinPath([LocalScriptFileDir, 'S1Lib'])  
 
 '''
 Function that take a generic string of available input value and that
@@ -49,7 +88,7 @@ def GetFileByExtensionFromDirectory(directory = '/Dir/To/Scan', filt_ext = 'abs.
     for root, dirnames, filenames in os.walk(directory):
         for filename in filenames:
             if filename.endswith((filt_ext)):
-                list_file.append(os.path.join(root, filename))
+                list_file.append(modOsJoinPath([root, filename]))
 
     list_file.sort()
     return list_file
@@ -182,13 +221,13 @@ def GetInputOutputListFilesForTempFiltering(aInput_Data_Folder,aOutput_Data_Fold
         DirName = os.path.split(DirFile)[1]
     
         # Create Output subfolder
-        OutFolder = os.path.join(aTmpDirTempFilt,DirName)
+        OutFolder = modOsJoinPath([aTmpDirTempFilt,DirName])
         if not os.path.exists(OutFolder):
             os.makedirs(OutFolder)
     
         FileName = os.path.basename(os.path.splitext(CopolFile)[0])
-        TempFilterFileName = os.path.join(OutFolder,FileName + '_TempFilt_W'\
-        + str(aWindow_Temp_Filtering) + '.tif')
+        TempFilterFileName = modOsJoinPath([OutFolder,FileName + '_TempFilt_W'\
+        + str(aWindow_Temp_Filtering) + '.tif'])
         AllOutCopolFile.append(TempFilterFileName.replace("\\","/"))
     
     AllTifFiles = GetFileByExtensionFromDirectory(aOutput_Data_Folder, 'tif')
@@ -211,13 +250,13 @@ def GetInputOutputListFilesForTempFiltering(aInput_Data_Folder,aOutput_Data_Fold
         DirName = os.path.split(DirFile)[1]
     
         # Create Output subfolder
-        OutFolder = os.path.join(aTmpDirTempFilt,DirName)
+        OutFolder = modOsJoinPath([aTmpDirTempFilt,DirName])
         if not os.path.exists(OutFolder):
             os.makedirs(OutFolder)
     
         FileName = os.path.basename(os.path.splitext(CrosspolFile)[0])
-        TempFilterFileName = os.path.join(OutFolder,FileName + '_TempFilt_W' \
-        + str(aWindow_Temp_Filtering) + '.tif')
+        TempFilterFileName = modOsJoinPath([OutFolder,FileName + '_TempFilt_W' \
+        + str(aWindow_Temp_Filtering) + '.tif'])
         AllOutCrosspolFile.append(TempFilterFileName.replace("\\","/"))
         
     return AllCopolFile,AllOutCopolFile, AllCrosspolFile, AllOutCrosspolFile,\
@@ -319,25 +358,25 @@ def TileTemporalFilteringRIOS(aInput_Data_Folder, aInputRasterListPath, aOutputR
         InputPrevFiltNameSplit[2] = UniqueDates[-1]
         InputPrevFiltNameSplit[3] = str(int(NumPrevDates + NumBands))
 
-        aOuputPrevFiltPath = os.path.join(os.path.dirname(aInputPrevFiltPath) ,
-                                          '_'.join(InputPrevFiltNameSplit) + '.tif')
+        aOuputPrevFiltPath = modOsJoinPath([os.path.dirname(aInputPrevFiltPath) ,
+                                          '_'.join(InputPrevFiltNameSplit) + '.tif'])
         BoolPrevFilt = True
     else:
         # Put existing file in order that rios find it in input
         aInputPrevFiltPath = aInputRasterListPath[0]
     
         if '_VV_' in aInputRasterListPath[0]:
-            aOuputPrevFiltPath = os.path.join(aOutput_Folder,
-            'TempProcStackVV_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif')
+            aOuputPrevFiltPath = modOsJoinPath([aOutput_Folder,
+            'TempProcStackVV_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif'])
         elif '_HH_' in aInputRasterListPath[0]:
-            aOuputPrevFiltPath = os.path.join(aOutput_Folder,
-            'TempProcStackHH_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif')
+            aOuputPrevFiltPath = modOsJoinPath([aOutput_Folder,
+            'TempProcStackHH_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif'])
         elif '_VH_' in aInputRasterListPath[0]:
-            aOuputPrevFiltPath = os.path.join(aOutput_Folder,
-            'TempProcStackVH_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif')
+            aOuputPrevFiltPath = modOsJoinPath([aOutput_Folder,
+            'TempProcStackVH_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif'])
         elif '_HV_' in aInputRasterListPath[0]:
-            aOuputPrevFiltPath = os.path.join(aOutput_Folder,
-            'TempProcStackHV_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif')
+            aOuputPrevFiltPath = modOsJoinPath([aOutput_Folder,
+            'TempProcStackHV_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif'])
             
         BoolPrevFilt = False
 
@@ -466,17 +505,17 @@ def TileTemporalFiltering(aInput_Data_Folder, aInputRasterListPath, aOutputRaste
         InputPrevFiltNameSplit[2] = UniqueDates[-1]
         InputPrevFiltNameSplit[3] = str(int(NumPrevDates + NumBands))
 
-        aOuputPrevFiltPath = os.path.join(os.path.dirname(aInputPrevFiltPath) , '_'.join(InputPrevFiltNameSplit) + '.tif')
+        aOuputPrevFiltPath = modOsJoinPath([os.path.dirname(aInputPrevFiltPath) , '_'.join(InputPrevFiltNameSplit) + '.tif'])
     else:
         # print 'Prev path does not  exist'
         if '_VV_' in aInputRasterListPath[0]:
-            aOuputPrevFiltPath = os.path.join(aOutput_Folder, 'TempProcStackVV_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif')
+            aOuputPrevFiltPath = modOsJoinPath([aOutput_Folder, 'TempProcStackVV_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif'])
         elif '_HH_' in aInputRasterListPath[0]:
-            aOuputPrevFiltPath = os.path.join(aOutput_Folder, 'TempProcStackHH_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif')
+            aOuputPrevFiltPath = modOsJoinPath([aOutput_Folder, 'TempProcStackHH_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif'])
         elif '_VH_' in aInputRasterListPath[0]:
-            aOuputPrevFiltPath = os.path.join(aOutput_Folder, 'TempProcStackVH_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif')
+            aOuputPrevFiltPath = modOsJoinPath([aOutput_Folder, 'TempProcStackVH_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif'])
         elif '_HV_' in aInputRasterListPath[0]:
-            aOuputPrevFiltPath = os.path.join(aOutput_Folder, 'TempProcStackHV_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif')
+            aOuputPrevFiltPath = modOsJoinPath([aOutput_Folder, 'TempProcStackHV_' + UniqueDates[0] + '_' + UniqueDates[-1] + '_' + str(NumBands) + '.tif'])
 
     # Output file
     # print 'aOuputPrevFiltPath', aOuputPrevFiltPath
@@ -599,7 +638,7 @@ def GenerateDualPolColorcompositiondB(aSubfolders, aOutputFolder, aRam):
         InDirName = os.path.split(Folder)[1]
 
         # Create Output subfolder
-        OutFolder = os.path.join(aOutputFolder,InDirName)
+        OutFolder = modOsJoinPath([aOutputFolder,InDirName])
         if not os.path.exists(OutFolder):
             os.makedirs(OutFolder)
 
@@ -620,23 +659,23 @@ def GenerateDualPolColorcompositiondB(aSubfolders, aOutputFolder, aRam):
             CopolFileName = os.path.basename(os.path.splitext(CopolFile)[0])
             CrosspolFileName = os.path.basename(os.path.splitext(CrosspolFile)[0])
 
-            CopoldBFile = os.path.join(OutFolder,  CopolFileName + '_dB' +'.tif')
-            CrosspoldBFile = os.path.join(OutFolder,  CrosspolFileName + '_dB' +'.tif')
+            CopoldBFile = modOsJoinPath([OutFolder,  CopolFileName + '_dB' +'.tif'])
+            CrosspoldBFile = modOsJoinPath([OutFolder,  CrosspolFileName + '_dB' +'.tif'])
 
             if '1SDV' in Folder:
                 BaseNameFile = CopolFileName.replace('VV','')
                 BaseNameFile = os.path.basename(os.path.splitext(BaseNameFile)[0])
 
-                DiffFile = os.path.join(OutFolder,  BaseNameFile + '_VHdB-VVdB' +'.tif')
+                DiffFile = modOsJoinPath([OutFolder,  BaseNameFile + '_VHdB-VVdB' +'.tif'])
 
-                OutputColorCompVRTFile = os.path.join(OutFolder,  BaseNameFile + 'VVdB_VHdB_HVdB-VVdB' +'.vrt')
+                OutputColorCompVRTFile = modOsJoinPath([OutFolder,  BaseNameFile + 'VVdB_VHdB_HVdB-VVdB' +'.vrt'])
             else:
                 BaseNameFile = CopolFileName.replace('HH','')
                 BaseNameFile = os.path.basename(os.path.splitext(BaseNameFile)[0])
 
-                DiffFile = os.path.join(OutFolder,  BaseNameFile + 'HVdB-HHdB' +'.tif')
+                DiffFile = modOsJoinPath([OutFolder,  BaseNameFile + 'HVdB-HHdB' +'.tif'])
 
-                OutputColorCompVRTFile = os.path.join(OutFolder,  BaseNameFile + 'HHdB_HVdB_HVdB-HHdB' +'.vrt')
+                OutputColorCompVRTFile = modOsJoinPath([OutFolder,  BaseNameFile + 'HHdB_HVdB_HVdB-HHdB' +'.vrt'])
             
             Int2dB(CopolFile, 'im1b1', CopoldBFile, aRam)
             Int2dB(CrosspolFile, 'im1b1', CrosspoldBFile, aRam)
@@ -721,7 +760,7 @@ def GenerateDualPolColorcompositionInt(aSubfolders, aOutputFolder, aRam):
         InDirName = os.path.split(Folder)[1]
 
         # Create Output subfolder
-        OutFolder = os.path.join(aOutputFolder,InDirName)
+        OutFolder = modOsJoinPath([aOutputFolder,InDirName])
         if not os.path.exists(OutFolder):
             os.makedirs(OutFolder)
 
@@ -746,16 +785,16 @@ def GenerateDualPolColorcompositionInt(aSubfolders, aOutputFolder, aRam):
                 BaseNameFile = CopolFileName.replace('VV','')
                 BaseNameFile = os.path.basename(os.path.splitext(BaseNameFile)[0])
 
-                Ratio = os.path.join(OutFolder,  BaseNameFile + '_VH-VV' +'.tif')
+                Ratio = modOsJoinPath([OutFolder,  BaseNameFile + '_VH-VV' +'.tif'])
 
-                OutputColorCompVRTFile = os.path.join(OutFolder,  BaseNameFile + 'VV_VH_VH-VV' +'.vrt')
+                OutputColorCompVRTFile = modOsJoinPath([OutFolder,  BaseNameFile + 'VV_VH_VH-VV' +'.vrt'])
             else:
                 BaseNameFile = CopolFileName.replace('HH','')
                 BaseNameFile = os.path.basename(os.path.splitext(BaseNameFile)[0])
 
-                Ratio = os.path.join(OutFolder,  BaseNameFile + 'HV-HH' +'.tif')
+                Ratio = modOsJoinPath([OutFolder,  BaseNameFile + 'HV-HH' +'.tif'])
 
-                OutputColorCompVRTFile = os.path.join(OutFolder,  BaseNameFile + 'HH_HV_HV-HH' +'.vrt')
+                OutputColorCompVRTFile = modOsJoinPath([OutFolder,  BaseNameFile + 'HH_HV_HV-HH' +'.vrt'])
 
             RatioDualPol(CopolFile, CrosspolFileName, Ratio, aRam)
 
@@ -795,13 +834,13 @@ def ApplyLeePreFiltering(aFolderList, aOutputFolder, aWindowSize, aENL, aRam):
         InDirName = os.path.split(Folder)[1]
 
         # Create Output subfolder
-        OutFolder = os.path.join(aOutputFolder,InDirName)
+        OutFolder = modOsJoinPath([aOutputFolder,InDirName])
         if not os.path.exists(OutFolder):
             os.makedirs(OutFolder)
 
         for file in AllTifFile:
             FileName = os.path.basename(os.path.splitext(file)[0])
-            OutputFile = os.path.join(OutFolder,  FileName + '_SpkLee_W' + str(aWindowSize) + '_NL' + str(aENL) +'.tif')
+            OutputFile = modOsJoinPath([OutFolder,  FileName + '_SpkLee_W' + str(aWindowSize) + '_NL' + str(aENL) +'.tif'])
 
             OTBLeeFiltering(file,OutputFile, Radius, aENL, aRam)
 
@@ -885,9 +924,8 @@ def getS1ByTile(aInputShape,rawRasterList, aPathFieldName, aPath):
     layer = dataSource.GetLayer()
     
     # Loop Thru feature
-    for currentPath in layer:
-        print 
-        if currentPath.GetField(aPathFieldName)==aPath:
+    for currentPath in layer: 
+        if int(currentPath.GetField(aPathFieldName))==int(aPath):
             PolygonPath = aPath
             break
         
@@ -981,15 +1019,21 @@ def CreateShapeFromPath(aInputShape,aFieldName, aFieldValue, aOutputShape):
     # Save extent to a new Shapefile
     outShapefile = aOutputShape
     LayerName = os.path.basename(os.path.splitext(aOutputShape)[0])
+    LayerName = LayerName.encode('utf-8')
+
+
     outDriver = ogr.GetDriverByName("ESRI Shapefile")
     
     # Remove output shapefile if it already exists
     if os.path.exists(outShapefile):
         outDriver.DeleteDataSource(outShapefile)
-        
+    
+
     # Create the output shapefile
     outDataSource = outDriver.CreateDataSource(outShapefile)
+    # progress.setInfo('LayerName' + LayerName)
     outLayer = outDataSource.CreateLayer(LayerName, geom_type=ogr.wkbPolygon)
+    # progress.setInfo('LayerName APRES' + LayerName)
     
     # Create the feature and set values
     featureDefn = outLayer.GetLayerDefn()
@@ -1039,15 +1083,15 @@ def ProcessS1Dataset(aInputManifestList, aOutputDir, aInputShape, aDemDir, aReso
     # Create tmp dir
     # Get time
     TimeNow = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    TmpDir = os.path.join(aOutputDir, 'tmp' + TimeNow)
+    TmpDir = modOsJoinPath([aOutputDir, 'tmp' + TimeNow])
     if not os.path.exists(TmpDir):
         os.makedirs(TmpDir)
         
     # Rasterize the polygone if enable option
     # Repro Vector to EPSG 3857
-    ReprojVectorPath = os.path.join(TmpDir,'ReprojVector.shp')
+    ReprojVectorPath = modOsJoinPath([TmpDir,'ReprojVector.shp'])
     ReprojVector(aInputShape, ReprojVectorPath, 3857)
-    ClipRasterBase = os.path.join(aOutputDir,'RasterArea.tif')
+    ClipRasterBase = modOsJoinPath([aOutputDir,'RasterArea.tif'])
     Rasterize(ReprojVectorPath, ClipRasterBase, 100)
 
 
@@ -1064,7 +1108,7 @@ def ProcessS1Dataset(aInputManifestList, aOutputDir, aInputShape, aDemDir, aReso
         DateFolder = FolderName.split('_')[4]
         DateFolder=DateFolder[0:DateFolder.find('T')]
         
-        WorkingFolder = os.path.join(aOutputDir,FolderName)
+        WorkingFolder = modOsJoinPath([aOutputDir,FolderName])
         if not os.path.exists(WorkingFolder):
             os.makedirs(WorkingFolder)
         
@@ -1074,26 +1118,26 @@ def ProcessS1Dataset(aInputManifestList, aOutputDir, aInputShape, aDemDir, aReso
 
             if 'grd-hv' in TiffFile:
                 SuffixOrtho = '_HV_'
-			
+            
             if 'grd-vv' in TiffFile:
                 SuffixOrtho = '_VV_'
 
             if 'grd-hh' in TiffFile:
                 SuffixOrtho = '_HH_'
 
-		
+        
             SuffixOrtho += aCalibName+'_Ortho.tif'
 
-            OutClipedFile = os.path.join(TmpDir,'S1Clip.tif')
+            OutClipedFile = modOsJoinPath([TmpDir,'S1Clip.tif'])
             OTBExtractRoi(TiffFile, ClipRasterBase, OutClipedFile, aRam)
             TiffFile = OutClipedFile
 
-            OutputFile = os.path.join(TmpDir,FolderName,FolderName + SuffixOrtho)
+            OutputFile = modOsJoinPath([TmpDir,FolderName,FolderName + SuffixOrtho])
             if not os.path.exists(os.path.dirname(OutputFile)):
                 os.makedirs(os.path.dirname(OutputFile))
 
-            OutputFileCliped = os.path.join(aOutputDir,FolderName,
-                                            SatelliteFolder + '_' + DateFolder + SuffixOrtho)		
+            OutputFileCliped = modOsJoinPath([aOutputDir,FolderName,
+                                            SatelliteFolder + '_' + DateFolder + SuffixOrtho])      
 
             # Do GRD conversion to Ortho (including calibration)
             GRD2Calib_Ortho(TiffFile,OutputFile,aDemDir, aCalibType, aNoise, aRam, TmpDir)
@@ -1140,7 +1184,7 @@ def GRD2Calib_Ortho(aInputFile,aOutputFile, aDemDir, aCalibration_Type, aNoise, 
     TimeNow = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
     # Output Intermediate Calibrated file
-    OutputCalibratedFile = os.path.join(aTmpDir, TimeNow + "_Calib.tif")
+    OutputCalibratedFile = modOsJoinPath([aTmpDir, TimeNow + "_Calib.tif"])
 
     # Calibration
     OTBSARCalibration(aInputFile, OutputCalibratedFile, aNoise, aCalibration_Type, aRam)
@@ -1182,17 +1226,31 @@ More less is the value more accurate is the results but more long
 In addition this value have to be linked to DEM pixel size
 '''
 def OTBOrthorectification(aInputFile, aOutputFile, aDEMDir , aRam):
+    # Boolean to know if in qgis
+    import qgis.utils
+    inqgis = qgis.utils.iface is not None
+    
+    if inqgis:
+        QGISProcessingScriptFolder = getQGISProcessingScriptFolder()
+        
+        # Create the S1Lib lib folder path
+        GeoidPath = modOsJoinPath([QGISProcessingScriptFolder, 'Data', 'Geoid', 'egm96.grd'])
+    else:
+        LocalScriptFileDir = os.path.dirname(os.path.abspath((getsourcefile(lambda:0)))).replace("\\","/")
+        FolderLevelUp = os.path.dirname(LocalScriptFileDir)
+        GeoidPath = modOsJoinPath([FolderLevelUp, 'Data', 'Geoid', 'egm96.grd'])
+    
     cmd = "otbcli_OrthoRectification -io.in "
     cmd += aInputFile + " "
     cmd += " -opt.ram " + str(aRam)
     cmd += " -io.out "
     cmd += aOutputFile
     cmd += " -elev.dem " + aDEMDir
-    cmd += " -elev.geoid " + "./Data/Geoid/egm96.grd"
+    cmd += " -elev.geoid " + GeoidPath
     cmd += " -opt.gridspacing 40 "
 
     # progress.setInfo(cmd)
-    print cmd
+    # print cmd
 
     p1 = subprocess.Popen (cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,  stderr=subprocess.PIPE)
     ret= p1.communicate()[1]
@@ -1219,7 +1277,7 @@ def GdalClipRasterWithVector(aInputRaster, aInputVector, aOutputFile, aOutputRes
 This function list this immediate subdirectories in one given directory
 '''
 def get_immediate_subdirectories(a_dir):
-    return [os.path.join(a_dir, name) for name in os.listdir(a_dir)
+    return [modOsJoinPath([a_dir, name]) for name in os.listdir(a_dir)
             if os.path.isdir(os.path.join(a_dir, name))]
                 
                 
@@ -1241,7 +1299,7 @@ def concatenateImage(aInputFolderList, aRam):
             SFolder = SFolder[-1].split('_')
             SFolder[4] = AcDate
             SFolder = '_'.join(SFolder[0:5])
-            NewOutDir = os.path.join(MainFolder,SFolder)
+            NewOutDir = modOsJoinPath([MainFolder,SFolder])
             if not os.path.exists(NewOutDir):
                 os.makedirs(NewOutDir)
 
@@ -1259,20 +1317,20 @@ def concatenateImage(aInputFolderList, aRam):
             FileName = '_'.join(FileName)
 
 
-            OutputConcatCopolFile = os.path.join(NewOutDir,FileName +'.tif')
+            OutputConcatCopolFile = modOsJoinPath([NewOutDir,FileName +'.tif'])
             # Concatenate Copol
             OTBConcatenate(CopolFile, OutputConcatCopolFile, aRam)
 
             # List crosspol file (VH or HV)
             CrosspolFile = [ item for item in TiffFiles if ('_VH_' or '_HV_') in item ]
-            FileName = os.path.basename(os.path.splitext(CrosspolFile[0])[0])
+            FileName = modOsJoinPath([os.path.splitext(CrosspolFile[0])[0]])
             FileName = os.path.split(FileName)
             FileName = FileName[-1].split('_')
             FileName[1] = AcDate
             FileName = '_'.join(FileName)
 
 
-            OutputConcatCrosspolFile = os.path.join(NewOutDir,FileName +'.tif')
+            OutputConcatCrosspolFile = modOsJoinPath([NewOutDir,FileName +'.tif'])
             # Concatenate Copol
             OTBConcatenate(CrosspolFile, OutputConcatCrosspolFile, aRam)
 

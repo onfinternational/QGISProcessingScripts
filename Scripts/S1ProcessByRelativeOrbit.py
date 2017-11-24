@@ -12,20 +12,66 @@ This script apply calibration and orthorectification process of S1 GRD data
 '''
 IMPORT
 '''
-import os
+import os, sys
+from inspect import getsourcefile
 
 
-from S1Lib.S1OwnLib import (ReturnRealCalibrationOTBValue,
-                                   GetFileByExtensionFromDirectory,
-                                   GetNewDatesFromListFilesInputManifest,
-                                   ReprojVector,
-                                   CheckAllDifferentRelativeOrbit,
-                                   getS1ByTile,
-                                   CreateShapeFromPath,
-                                   ProcessS1Dataset)
-#from S1Lib.S1OTBLib import 
+'''
+This function join path always using unix sep
+'''
+def modOsJoinPath(alistToJoin):
+    joinedPath = os.path.join(*alistToJoin).replace("\\","/")
+    
+    return joinedPath
 
-# TO DELETE
+
+'''
+This function return the qgis script folder
+'''
+def getQGISProcessingScriptFolder():
+    from qgis.core import QgsApplication
+    QGISProcessingScriptFolder = os.path.dirname(QgsApplication.qgisSettingsDirPath())
+    QGISProcessingScriptFolder = modOsJoinPath([QGISProcessingScriptFolder,
+    'processing', 'scripts'])
+    
+    return QGISProcessingScriptFolder
+
+'''
+This function load the necessary libs in different way
+if we are running script in qgis processing or not
+'''
+def AddS1LibToPath():
+    # Boolean to know if in qgis
+    import qgis.utils
+    inqgis = qgis.utils.iface is not None
+    
+    if inqgis:
+        QGISProcessingScriptFolder = getQGISProcessingScriptFolder()
+        
+        # Create the S1Lib lib folder path
+        ScriptPath = modOsJoinPath([QGISProcessingScriptFolder, 'S1Lib'])
+    else:
+        LocalScriptFileDir = os.path.dirname(os.path.abspath((getsourcefile(lambda:0)))).replace("\\","/")
+        # Create the S1Lib lib folder path
+        ScriptPath = modOsJoinPath([LocalScriptFileDir, 'S1Lib'])  
+        
+    # Add path to sys
+    sys.path.insert(0,ScriptPath)
+    
+    
+
+# Load OTB Libs
+AddS1LibToPath()
+
+# Load the libs
+from S1OwnLib import (ReturnRealCalibrationOTBValue,
+                          GetFileByExtensionFromDirectory,
+                          GetNewDatesFromListFilesInputManifest,
+                          ReprojVector,
+                          CheckAllDifferentRelativeOrbit,
+                          getS1ByTile,
+                          CreateShapeFromPath,
+                          ProcessS1Dataset)
 '''
 NOTES
 Things to do
@@ -36,7 +82,7 @@ Things to do
 
 
 
-##Sentinel-1 Deforestation Process=group
+##Sentinel-1 Deforestation Process V2=group
 ##1 - Calibration and Orthorectification over tiles=name
 ##Input_Data_Folder=folder
 ##DEM_Folder=folder
@@ -119,7 +165,7 @@ Output_Data_Folder = '/media/cedric/CL/ONFGuyane/Data/Sentinel1/TestScript/Ortho
 Amount of allocate ram
 In case of use half of the available memory (not the physical memory)
 '''
-Ram = 2000
+Ram = 512
 
 
 '''
@@ -176,14 +222,14 @@ for userPath in PathUserList:
                                   userPath)
     # If intersect is not empty we create output directory
     if len(intersectRaster) > 0:
-        PathDir = os.path.join(Output_Data_Folder, 'p' + str(userPath))
+        PathDir = modOsJoinPath([Output_Data_Folder, 'p' + str(userPath)])
         if not os.path.exists(PathDir):
             os.makedirs(PathDir)
     else: # if no data go to next path
         continue
     
     # Create Shape file of the current path
-    PathShape = os.path.join(PathDir, 'p' + str(userPath) + '.shp')
+    PathShape = modOsJoinPath([PathDir, 'p' + str(userPath) + '.shp'])
     CreateShapeFromPath(Input_Polygon_FileEPSG4326,
                         Relative_Orbit_Field_Name,
                         str(userPath),

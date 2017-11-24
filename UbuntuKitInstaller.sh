@@ -40,6 +40,7 @@ apt-get install --yes --allow-unauthenticated \
 											libgeotiff-dev \
 											spatialite-bin \
 											spatialite-gui \
+											python-pathlib \
 											python-scipy
 
 
@@ -52,12 +53,12 @@ mv $otb.run /usr/local/lib
 cd /usr/local/lib
 ./$otb.run
 rm $otb.run
-ln -s $otb orfeo
-chmod o+rx orfeo/*.sh
-chmod o+rx orfeo/otbenv.profile
+# ln -s $otb orfeo
+# chmod o+rx orfeo/*.sh
+# chmod o+rx orfeo/otbenv.profile
 cd -
 echo "PYTHONPATH=/usr/local/lib/OTB-contrib-6.0.0-Linux64/lib/python" >> /etc/environment
-echo "PATH=${PATH}:/usr/local/lib/orfeo/bin" >> /etc/environment
+echo "PATH=${PATH}:/usr/local/lib/OTB-contrib-6.0.0-Linux64/bin" >> /etc/environment
 
 # Install python RIOS library
 
